@@ -11,8 +11,7 @@ services:
         value: production
       - key: PORT
         value: 10000
-      - key: FRONTEND_URL
-        sync: false  # Set this to your frontend URL after deployment
+      # FRONTEND_URL will be added manually after frontend is deployed
 
   # Frontend Static Site
   - type: web
@@ -21,6 +20,5 @@ services:
     buildCommand: cd client && npm install && npm run build
     staticPublishPath: ./client/dist
     envVars:
-      - key: VITE_API_URL
-        sync: false  # Set this to your backend API URL after deployment
+      # VITE_API_URL will be added manually after backend is deployed
 

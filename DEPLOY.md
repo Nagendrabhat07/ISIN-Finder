@@ -39,7 +39,8 @@ This guide will help you deploy the ISIN Extractor app to Render.
    **For the Frontend Service (isin-extractor-frontend):**
    - Go to the frontend service settings
    - Add environment variable:
-     - `VITE_API_URL`: Your backend API URL (e.g., `https://isin-extractor-api.onrender.com`)
+     - `VITE_API_URL`: Your backend base URL (e.g., `https://isin-extractor-api.onrender.com`)
+     - **Note**: Just the base URL, the `/extract-isin` endpoint will be added automatically
 
 4. **Redeploy**
    - After setting environment variables, trigger a manual redeploy for both services
@@ -110,7 +111,38 @@ This guide will help you deploy the ISIN Extractor app to Render.
 
 ## Troubleshooting
 
-- **CORS Errors**: Check that `FRONTEND_URL` in backend matches your frontend domain
-- **API Not Found**: Verify `VITE_API_URL` in frontend points to your backend URL
+### "Failed to fetch" Error
+
+If you see "Failed to fetch" when trying to extract ISINs:
+
+1. **Check Environment Variables:**
+   - Backend: Ensure `FRONTEND_URL` is set to your frontend URL (e.g., `https://isin-extractor-frontend.onrender.com`)
+   - Frontend: Ensure `VITE_API_URL` is set to your backend base URL (e.g., `https://isin-extractor-api.onrender.com`)
+
+2. **Verify Backend is Running:**
+   - Go to your backend service on Render
+   - Check the "Logs" tab to see if it's running
+   - Test the health endpoint: `https://your-backend-url.onrender.com/health`
+   - Should return `{"status":"ok"}`
+
+3. **Rebuild Frontend:**
+   - After setting `VITE_API_URL`, you MUST rebuild the frontend
+   - Go to frontend service → Manual Deploy → Clear build cache & deploy
+   - Vite environment variables are baked into the build at build time
+
+4. **Check CORS:**
+   - Backend `FRONTEND_URL` must exactly match your frontend URL (including `https://`)
+   - No trailing slashes
+
+5. **Check Network Tab:**
+   - Open browser DevTools → Network tab
+   - Try extracting ISINs
+   - Look for the failed request and check the error message
+
+### Other Common Issues
+
+- **CORS Errors**: Check that `FRONTEND_URL` in backend matches your frontend domain exactly
+- **API Not Found**: Verify `VITE_API_URL` in frontend points to your backend URL (base URL only)
 - **Build Failures**: Check the build logs in Render dashboard for specific errors
+- **Services Spinning Down**: Free tier services spin down after 15 min inactivity - first request may be slow
 

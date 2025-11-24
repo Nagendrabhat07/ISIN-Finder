@@ -18,6 +18,18 @@ app.use(express.json({ limit: '2mb' }));
 // Matches ISO 6166 ISIN codes: two letters, nine alphanumerics, one digit.
 const ISIN_REGEX = /\b[A-Z]{2}[A-Z0-9]{9}\d\b/g;
 
+// Root route - API info
+app.get('/', (_req, res) => {
+  res.json({
+    name: 'ISIN Extractor API',
+    version: '1.0.0',
+    endpoints: {
+      health: 'GET /health',
+      extractIsin: 'POST /extract-isin',
+    },
+  });
+});
+
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });

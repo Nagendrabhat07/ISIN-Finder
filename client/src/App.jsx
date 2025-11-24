@@ -1,7 +1,18 @@
 import { useState } from 'react';
 import './App.css';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/extract-isin';
+// Construct API URL - if VITE_API_URL is set, use it (should include full URL with /extract-isin)
+// Otherwise default to localhost for development
+const getApiUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl) {
+    // If it already includes /extract-isin, use as-is, otherwise append it
+    return envUrl.endsWith('/extract-isin') ? envUrl : `${envUrl}/extract-isin`;
+  }
+  return 'http://localhost:4000/extract-isin';
+};
+
+const API_URL = getApiUrl();
 
 function App() {
   const [pdfUrl, setPdfUrl] = useState('');
@@ -32,7 +43,10 @@ function App() {
 
       if (!response.ok) {
         const errorPayload = await response.json().catch(() => ({}));
-        throw new Error(errorPayload.error || 'Failed to extract ISINs');
+        const statusText = response.statusText || `HTTP ${response.status}`;
+        throw new Error(
+          errorPayload.error || `Failed to extract ISINs (${statusText})`
+        );
       }
 
       const data = await response.json();
@@ -40,10 +54,20 @@ function App() {
       setCount(data.count || 0);
       setHasSearched(true);
     } catch (err) {
-      setError(
-        err?.message ||
-          'Something went wrong. Check the link or try a different PDF.'
-      );
+      // Provide more helpful error messages
+      let errorMessage = 'Something went wrong. Check the link or try a different PDF.';
+      
+      if (err?.message) {
+        if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+          errorMessage = 'Cannot connect to the server. Please check if the backend is running and the API URL is correct.';
+        } else {
+          errorMessage = err.message;
+        }
+      }
+      
+      setError(errorMessage);
+      console.error('ISIN extraction error:', err);
+      console.error('API URL used:', API_URL);
     } finally {
       setLoading(false);
     }
