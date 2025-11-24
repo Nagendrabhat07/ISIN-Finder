@@ -1,0 +1,26 @@
+services:
+  # Backend API Service
+  - type: web
+    name: isin-extractor-api
+    env: node
+    plan: free
+    buildCommand: cd server && npm install
+    startCommand: cd server && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: FRONTEND_URL
+        sync: false  # Set this to your frontend URL after deployment
+
+  # Frontend Static Site
+  - type: web
+    name: isin-extractor-frontend
+    env: static
+    buildCommand: cd client && npm install && npm run build
+    staticPublishPath: ./client/dist
+    envVars:
+      - key: VITE_API_URL
+        sync: false  # Set this to your backend API URL after deployment
+
