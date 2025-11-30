@@ -103,8 +103,8 @@ function App() {
             </button>
           </div>
           <p className="helper">
-            Tip: Make sure the link is publicly accessible so the server can
-            download the PDF.
+            Tip: Use a direct PDF link (ends in .pdf). Preview pages and protected PDFs won't work. 
+            If needed, download the PDF and upload to Google Drive/Dropbox for a public link.
           </p>
         </form>
 
@@ -138,6 +138,9 @@ function App() {
           </section>
         )}
       </main>
+      <div>
+        <p>Made by nagendra bhat</p>
+      </div>
     </div>
   );
 }
