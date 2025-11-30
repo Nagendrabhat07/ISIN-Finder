@@ -78,6 +78,46 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
+// Debug endpoint to test URL access
+app.post('/test-url', async (req, res) => {
+  const { url } = req.body || {};
+  if (!url) {
+    return res.status(400).json({ error: 'url is required' });
+  }
+
+  try {
+    const response = await axios.get(url, {
+      responseType: 'arraybuffer',
+      timeout: 10000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': '*/*',
+      },
+      maxRedirects: 5,
+      validateStatus: () => true, // Don't throw on any status
+    });
+
+    const buffer = Buffer.from(response.data);
+    const fileHeader = buffer.slice(0, 100).toString();
+    const contentType = response.headers['content-type'] || 'unknown';
+
+    return res.json({
+      status: response.status,
+      contentType,
+      contentLength: buffer.length,
+      isPdf: fileHeader.startsWith('%PDF'),
+      headerPreview: fileHeader.substring(0, 200),
+      redirects: response.request.res?.responseUrl !== url,
+      finalUrl: response.request.res?.responseUrl || url,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: error.message,
+      code: error.code,
+    });
+  }
+});
+
 async function fetchPdf(url, depth = 0) {
   // Prevent infinite recursion
   if (depth > 2) {
@@ -176,7 +216,7 @@ async function fetchPdf(url, depth = 0) {
 }
 
 app.post('/extract-isin', async (req, res) => {
-  const { pdfUrl } = req.body || {};
+  const { pdfUrl, debug } = req.body || {};
 
   if (!pdfUrl || typeof pdfUrl !== 'string' || !pdfUrl.trim()) {
     return res.status(400).json({ error: 'pdfUrl is required' });
@@ -187,16 +227,76 @@ app.post('/extract-isin', async (req, res) => {
     console.log(`Processing PDF: ${trimmedUrl}`);
     
     // Fetch PDF with multiple strategies
-    const pdfBuffer = await fetchPdf(trimmedUrl);
+    let pdfBuffer;
+    try {
+      pdfBuffer = await fetchPdf(trimmedUrl);
+    } catch (fetchError) {
+      console.error('PDF fetch error:', fetchError.message);
+      
+      // If it's a Credit Agricole URL, try additional patterns
+      if (trimmedUrl.includes('credit-agricole.com') && trimmedUrl.includes('/pdfPreview/')) {
+        const match = trimmedUrl.match(/\/pdfPreview\/(\d+)/);
+        if (match) {
+          const id = match[1];
+          const alternativeUrls = [
+            `https://www.credit-agricole.com/content/dam/cacorp/pdf/en/${id}.pdf`,
+            `https://www.credit-agricole.com/content/dam/cacorp/pdf/fr/${id}.pdf`,
+            `https://www.credit-agricole.com/content/dam/cacorp/pdf/${id}.pdf`,
+            `https://www.credit-agricole.com/pdf/${id}.pdf`,
+          ];
+          
+          console.log('Trying alternative Credit Agricole PDF URLs...');
+          for (const altUrl of alternativeUrls) {
+            try {
+              console.log(`Trying: ${altUrl}`);
+              const response = await axios.get(altUrl, {
+                responseType: 'arraybuffer',
+                timeout: 15000,
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                  'Accept': 'application/pdf',
+                },
+              });
+              const buffer = Buffer.from(response.data);
+              if (buffer.slice(0, 4).toString().startsWith('%PDF')) {
+                console.log(`Success with alternative URL: ${altUrl}`);
+                pdfBuffer = buffer;
+                break;
+              }
+            } catch (altError) {
+              console.log(`Alternative URL failed: ${altError.message}`);
+              continue;
+            }
+          }
+        }
+      }
+      
+      if (!pdfBuffer) {
+        throw fetchError;
+      }
+    }
     
     const parsed = await pdfParse(pdfBuffer);
     const rawText = parsed.text || '';
     
     console.log(`Extracted ${rawText.length} characters from PDF`);
     
-    // Log a sample of extracted text for debugging (first 500 chars)
+    // Log a sample of extracted text for debugging
     if (rawText.length > 0) {
-      console.log('Sample of extracted text:', rawText.substring(0, 500));
+      const sample = rawText.substring(0, 1000);
+      console.log('Sample of extracted text (first 1000 chars):', sample);
+      
+      // Look for any patterns that might be ISIN-like
+      const potentialIsins = rawText.match(/[A-Z]{2}[A-Z0-9]{9,11}/g) || [];
+      if (potentialIsins.length > 0) {
+        console.log(`Found ${potentialIsins.length} potential ISIN-like patterns:`, potentialIsins.slice(0, 20).join(', '));
+      }
+    } else {
+      console.warn('No text extracted from PDF! PDF might be image-based or empty.');
+      return res.status(400).json({ 
+        error: 'No text could be extracted from this PDF. The PDF might be image-based or the text might not be extractable.',
+        debug: debug ? { extractedLength: 0 } : undefined
+      });
     }
     
     // Extract ISINs using improved function
@@ -204,26 +304,54 @@ app.post('/extract-isin', async (req, res) => {
     
     console.log(`Found ${isins.length} unique ISIN codes`);
     if (isins.length > 0) {
-      console.log('ISINs found:', isins.slice(0, 10).join(', ')); // Log first 10
+      console.log('ISINs found:', isins.slice(0, 20).join(', '));
+    } else {
+      console.warn('No ISIN codes found in extracted text');
+      // Try to find patterns that might be ISINs but didn't match
+      const allCaps = rawText.match(/[A-Z]{2}[A-Z0-9]+/g) || [];
+      if (allCaps.length > 0) {
+        console.log('Found other uppercase patterns (might be partial ISINs):', allCaps.slice(0, 30).join(', '));
+      }
     }
 
-    res.json({
+    const response = {
       pdfUrl: trimmedUrl,
       isins: isins,
       count: isins.length,
-    });
+    };
+
+    // Include debug info if requested
+    if (debug) {
+      response.debug = {
+        textLength: rawText.length,
+        textSample: rawText.substring(0, 500),
+        pages: parsed.numpages,
+      };
+    }
+
+    res.json(response);
   } catch (error) {
     console.error('Failed to process the PDF:', error.message);
     console.error('Error stack:', error.stack);
     
     let errorMessage = 'Failed to process the PDF';
-    if (error.message.includes('Could not retrieve PDF')) {
-      errorMessage = 'Could not retrieve PDF from the provided URL. Please ensure it\'s a direct PDF link or try downloading the PDF and hosting it publicly.';
+    let statusCode = 500;
+    
+    if (error.message.includes('Could not retrieve PDF') || error.message.includes('retrieve')) {
+      errorMessage = 'Could not retrieve PDF from the provided URL. The URL might require authentication, be blocked, or the PDF might not be accessible. Try downloading the PDF and hosting it on a public service like Google Drive or Dropbox.';
+      statusCode = 400;
     } else if (error.message.includes('timeout')) {
-      errorMessage = 'Request timed out. The PDF file might be too large or the server is slow.';
+      errorMessage = 'Request timed out. The PDF file might be too large or the server is slow to respond.';
+      statusCode = 408;
+    } else if (error.response) {
+      errorMessage = `Server returned error: ${error.response.status} ${error.response.statusText}`;
+      statusCode = error.response.status;
     }
     
-    res.status(500).json({ error: errorMessage });
+    res.status(statusCode).json({ 
+      error: errorMessage,
+      debug: debug ? { originalError: error.message } : undefined
+    });
   }
 });
 
