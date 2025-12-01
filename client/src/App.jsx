@@ -138,9 +138,7 @@ function App() {
           </section>
         )}
       </main>
-      <div>
-        <p>Made by nagendra bhat</p>
-      </div>
+      
     </div>
   );
 }
